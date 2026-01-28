@@ -1,0 +1,36 @@
+filename = 'P403.NA.tenv3.txt'; 
+
+fid = fopen(filename);
+C = textscan(fid, '%s %s %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f', 'headerlines', 1);
+fclose(fid);
+
+t     = C{3};   % Decimal Year
+n     = C{9};   % North (meters)
+e     = C{13} * 1000;  % East (meters)
+v     = C{11};  % Vertical (meters)
+n_err = C{12};  % North
+e_err = C{16} * 1000;  % East
+v_err = C{14};  % Vertical
+
+figure(1)
+
+% Northing Plot - Now using 'plot' for a cleaner look
+subplot(3,1,1)
+plot(t, n, '.', 'MarkerSize', 8, 'Color', 'r') 
+title('Station P403 Position Time Series')
+ylabel('North (m)')
+grid on
+
+% Easting Plot - Now using 'plot' for a cleaner look
+subplot(3,1,2)
+errorbar(t, e, e_err, '.', 'Color', [0.7 0.7 1], 'MarkerEdgeColor', 'b', 'CapSize', 0);
+ylabel('East (mm)');
+grid on;
+
+
+% Vertical Plot - Keeping error bars here (often more variable)
+subplot(3,1,3)
+errorbar(t, v, v_err, '.', 'Color', [0 0.5 0]) 
+ylabel('Vertical (m)')
+xlabel('Decimal Year')
+grid on
