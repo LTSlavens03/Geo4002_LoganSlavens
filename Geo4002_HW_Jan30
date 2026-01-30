@@ -1,0 +1,88 @@
+filename = 'P403.NA.tenv3.txt'; 
+fid = fopen(filename);
+C = textscan(fid, '%s %s %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f', 'headerlines', 1);
+fclose(fid);
+
+t = C{3};   
+n = C{9} * 1000;   % North (mm)
+e = C{13} * 1000;  % East (mm)
+v = C{11} * 1000;  % Vertical (mm)
+n_err = C{12};  % North error (no longer used)
+e_err = C{16};  % East error
+v_err = C{14};  % Vertical error
+
+
+%My Code wasnt ploting the residual data, so Gemini told me to add this
+%section and then it ran the code great.
+keep = ~isnan(t) & ~isnan(n) & ~isnan(e) & ~isnan(v);
+t = t(keep); 
+n = n(keep); 
+e = e(keep); 
+v = v(keep);
+%From my research, this code (lines 17-21), ~isnan gets rid of NaNs and
+%filters out every row of the data columns and x=x(keep) only keeps values
+%that arent rejected by the ~isnan code.
+
+%Polyfit North, East, & Vertical
+pn = polyfit(t, n, 1); 
+pe = polyfit(t, e, 1); 
+pv = polyfit(t, v, 1); 
+
+% Slopes (mm/yr) 
+vn = pn(1);
+ve = pe(1);
+vv = pv(1);
+
+%residuals
+fit_n = polyval(pn, t);
+fit_e = polyval(pe, t);
+fit_v = polyval(pv, t);
+
+res_n = n - fit_n;
+res_e = e - fit_e;
+res_v = v - fit_v;
+
+% Figure 1
+
+% Northing
+figure(1); clf;
+subplot(3,1,1)
+plot(t, n, '.r'); hold on; plot(t, fit_n, 'k-', 'LineWidth', 2);
+ylabel('North (mm)'); title('P403 Position & Best Fit'); grid on;
+
+% Easting
+subplot(3,1,2)
+plot(t, e, '.b'); hold on; plot(t, fit_e, 'k-', 'LineWidth', 2);
+ylabel('East (mm)'); grid on;
+
+% Vertical
+subplot(3,1,3)
+plot(t, v, '.', 'Color', [0 0.5 0]); hold on; plot(t, fit_v, 'k-', 'LineWidth', 2);
+ylabel('Vertical (mm)'); xlabel('Year'); grid on;
+
+% Figure 2 Residuals
+
+%N
+figure(2); clf;
+subplot(3,1,1)
+plot(t, res_n, '.r', 'MarkerSize', 8); 
+ylabel('North Res. (mm)'); title('P403 Residuals (Detrended)'); grid on;
+
+%E
+subplot(3,1,2)
+plot(t, res_e, '.b', 'MarkerSize', 8); 
+ylabel('East Res. (mm)'); grid on;
+
+%V
+subplot(3,1,3)
+plot(t, res_v, '.', 'Color', [0 0.5 0], 'MarkerSize', 8); 
+ylabel('Vert Res. (mm)'); xlabel('Year'); grid on;
+
+% magnitude = sqrt(vn^2 + ve^2) : a2 + b2 = c2 > c= sqrt(a2+b2)
+v_mag = sqrt(vn^2 + ve^2);
+
+% direction = degrees east : atan2 = inverse tangent : d = degrees : 
+v_dir = atan2d(ve, vn); 
+
+fprintf('Velocity Magnitude: %.2f mm/yr\n', v_mag);
+fprintf('Velocity Direction: %.2f degrees East of North\n', v_dir);
