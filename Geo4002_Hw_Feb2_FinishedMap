@@ -1,0 +1,220 @@
+clear; clc;
+
+% Station P403
+filename = 'P403.NA.tenv3.txt'; 
+fid = fopen(filename);
+fmt = '%s %s %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f';
+C = textscan(fid, fmt, 'HeaderLines', 1);
+fclose(fid);
+
+t = C{3};   
+n = C{9} * 1000;   % North (mm)
+e = C{13} * 1000;  % East (mm)
+v = C{11} * 1000;  % Vertical (mm)
+n_err = C{12};  % North error (no longer used)
+e_err = C{16};  % East error
+v_err = C{14};  % Vertical error
+lat403 = C{21}(1);
+lon403 = C{22}(1);
+
+%Polyfit North, East, & Vertical
+pn = polyfit(t, n, 1); 
+pe = polyfit(t, e, 1); 
+pv = polyfit(t, v, 1); 
+
+% Slopes (mm/yr) 
+vn = pn(1);
+ve = pe(1);
+vv = pv(1);
+
+%residuals
+fit_n = polyval(pn, t);
+fit_e = polyval(pe, t);
+fit_v = polyval(pv, t);
+
+res_n = n - fit_n;
+res_e = e - fit_e;
+res_v = v - fit_v;
+
+% Figure 1
+
+% Northing
+figure(1); clf;
+subplot(3,1,1)
+plot(t, n, '.r'); hold on; plot(t, fit_n, 'k-', 'LineWidth', 2);
+ylabel('North (mm)'); title('P403 Position & Best Fit'); grid on;
+
+% Easting
+subplot(3,1,2)
+plot(t, e, '.b'); hold on; plot(t, fit_e, 'k-', 'LineWidth', 2);
+ylabel('East (mm)'); grid on;
+
+% Vertical
+subplot(3,1,3)
+plot(t, v, '.g'); hold on; plot(t, fit_v, 'k-', 'LineWidth', 2);
+ylabel('Vertical (mm)'); xlabel('Year'); grid on;
+
+% Figure 2 Residuals
+
+%N
+figure(2); clf;
+subplot(3,1,1)
+plot(t, res_n, '.r', 'MarkerSize', 8); 
+ylabel('North Res. (mm)'); title('P403 Residuals (Detrended)'); grid on;
+
+%E
+subplot(3,1,2)
+plot(t, res_e, '.b', 'MarkerSize', 8); 
+ylabel('East Res. (mm)'); grid on;
+
+%V
+subplot(3,1,3)
+plot(t, res_v, '.g', 'MarkerSize', 8); 
+ylabel('Vert Res. (mm)'); xlabel('Year'); grid on;
+
+% magnitude = sqrt(vn^2 + ve^2) : a2 + b2 = c2 > c= sqrt(a2+b2)
+v_mag = sqrt(vn^2 + ve^2);
+
+% direction = degrees east : atan2 = inverse tangent : d = degrees : 
+v_dir = atan2d(ve, vn); 
+
+fprintf('Velocity Magnitude: %.2f mm/yr\n', v_mag);
+fprintf('Velocity Direction: %.2f degrees East of North\n', v_dir);
+
+% Figure 3 - Map
+
+% Download P404, P396, P395
+sites = {'P404', 'P396', 'P395'};
+urls = {'https://geodesy.unr.edu/gps_timeseries/IGS20/tenv3/IGS20/P404.tenv3', ...
+        'https://geodesy.unr.edu/gps_timeseries/IGS20/tenv3/IGS20/P396.tenv3', ...
+        'https://geodesy.unr.edu/gps_timeseries/IGS20/tenv3/IGS20/P395.tenv3'};
+
+% Pre-allocate arrays for plotting
+all_ve = zeros(1,4);
+all_vn = zeros(1,4); 
+all_lons = zeros(1,4);
+all_lats = zeros(1,4);
+
+% P403 (Addition of Copiloit/AI)
+all_ve(1) = ve;
+all_vn(1) = vn;
+all_lons(1) = lon403;
+all_lats(1) = lat403;
+
+% P404
+websave('P404.tenv3', urls{1});
+
+fid = fopen('P404.tenv3');
+C404 = textscan(fid, fmt, 'HeaderLines', 1);
+fclose(fid);
+
+t404 = C404{3};
+e404 = C404{9}  * 1000;
+n404 = C404{11} * 1000;
+
+pe404 = polyfit(t404, e404, 1);
+pn404 = polyfit(t404, n404, 1);
+
+% (Addition of Copiloit/AI)
+all_ve(2)   = pe404(1);
+all_vn(2)   = pn404(1);
+all_lats(2) = C404{21}(1);
+all_lons(2) = C404{22}(1);
+
+% P396
+websave('P396.tenv3', urls{2});
+
+fid = fopen('P396.tenv3');
+C396 = textscan(fid, fmt, 'HeaderLines', 1);
+fclose(fid);
+
+t396 = C396{3};
+e396 = C396{9}  * 1000;
+n396 = C396{11} * 1000;
+
+pe396 = polyfit(t396, e396, 1);
+pn396 = polyfit(t396, n396, 1);
+
+% (Addition of Copiloit/AI)
+all_ve(3)   = pe396(1);
+all_vn(3)   = pn396(1);
+all_lats(3) = C396{21}(1);
+all_lons(3) = C396{22}(1);
+
+% P395
+websave('P395.tenv3', urls{3});
+
+fid = fopen('P395.tenv3');
+C395 = textscan(fid, fmt, 'HeaderLines', 1);
+fclose(fid);
+
+t395 = C395{3};
+e395 = C395{9}  * 1000;
+n395 = C395{11} * 1000;
+
+pe395 = polyfit(t395, e395, 1);
+pn395 = polyfit(t395, n395, 1);
+
+% (Addition of Copiloit/AI)
+all_ve(4)   = pe395(1);
+all_vn(4)   = pn395(1);
+all_lats(4) = C395{21}(1);
+all_lons(4) = C395{22}(1);
+
+figure(3); clf;
+
+% figure window
+set(gcf, 'Color', 'w', 'Position', [200 200 800 800]);
+
+axes; hold on;
+set(gca, 'Color', [0.8 0.8 0.8], 'Box', 'on');
+
+% Load Map Files
+coast = load('coastfile.xy');
+borders = load('politicalboundaryfile.xy');
+
+% Plot Coastlines
+plot(coast(:,1), coast(:,2), 'k', 'LineWidth', 1.2);
+
+% Plot Political Boundaries
+plot(borders(:,1), borders(:,2), 'k', 'LineWidth', 0.8);
+
+% Velocity Vectors (mm/yr)
+quiver(all_lons, all_lats, all_ve, all_vn, 0.5, ...
+       'k', 'LineWidth', 2, 'MaxHeadSize', 0.5);
+
+% Compute magnitudes
+v_mag403 = sqrt(all_ve(1)^2 + all_vn(1)^2);
+v_mag404 = sqrt(all_ve(2)^2 + all_vn(2)^2);
+v_mag396 = sqrt(all_ve(3)^2 + all_vn(3)^2);
+v_mag395 = sqrt(all_ve(4)^2 + all_vn(4)^2);
+
+% Magnitudes of arrows (Help from old code)
+text(all_lons(1)+0.05, all_lats(1)-0.05, ...
+     [num2str(v_mag403,'%.2f') ' mm/yr'], 'Color','r','FontWeight','bold');
+text(all_lons(2)+0.05, all_lats(2)-0.05, ...
+     [num2str(v_mag404,'%.2f') ' mm/yr'], 'Color','b','FontWeight','bold');
+text(all_lons(3)+0.05, all_lats(3)-0.05, ...
+     [num2str(v_mag396,'%.2f') ' mm/yr'], 'Color','g','FontWeight','bold');
+text(all_lons(4)+0.05, all_lats(4)-0.05, ...
+     [num2str(v_mag395,'%.2f') ' mm/yr'], 'Color','y','FontWeight','bold');
+
+% Station Markers
+plot(all_lons, all_lats, 'ko', 'MarkerFaceColor', 'k');
+
+% Station Labels
+text(all_lons + 0.05, all_lats, {'P403','P404','P396','P395'}, ...
+     'FontWeight', 'bold', 'Color', 'k');
+
+% Axis limits
+axis([-125.5 -122 46.5 49]);
+
+% Mercator aspect ratio
+avg_lat = mean(all_lats);
+daspect([1 cosd(avg_lat) 1]);
+
+xlabel('Longitude');
+ylabel('Latitude');
+title('GNSS Velocity Vectors (mm/yr)');
+
+grid on;
