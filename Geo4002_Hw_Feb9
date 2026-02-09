@@ -1,0 +1,104 @@
+clear; clc; close all;
+
+% Download data
+
+station = 'J175';
+url = 'https://geodesy.unr.edu/gps_timeseries/IGS20/tenv3/OK/J175.OK.tenv3';
+filename = 'J175.OK.tenv3';
+    websave(filename, url);
+
+% Load and parse Data for t, e, n, u, location
+[t, E, N, U, xloc, yloc] = load_and_parse_3comp(filename);
+
+function [t, E, N, U, xloc, yloc] = load_and_parse_3comp(filename)
+    fid = fopen(filename);
+    % Col 3=Time, Col 9=East, Col 11=North, Col 13=Up, Col 21=Lat, Col 22=Lon
+
+    C = textscan(fid, '%s %s %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f', 'headerlines', 1);
+    fclose(fid);
+    
+    t = C{3};       
+    E = C{9} * 1000;  % East (m -> mm)
+    N = C{11} * 1000; % North (m -> mm)
+    U = C{13} * 1000; % Up (m -> mm)
+    
+    yloc = C{21}(1); % Lat
+    xloc = C{22}(1); % Lon
+end
+
+% fix Longitude ftom the -360 format
+    xloc = xloc + 360;
+
+% Set the time 
+eq_date = 2011.186; % Toku ethquake
+post_buffer = 0.005; % After
+
+i_pre = find(t < eq_date);
+i_post = find(t > (eq_date + post_buffer));
+
+% Cosseismic jump (Last pre vs first post)
+idx_last_pre = i_pre(end);
+idx_first_post = find(t > eq_date, 1, 'first');
+
+% Calculate velos & Ddisplacements
+
+% Pre velo (mm/yr)
+[v_pre_E, ~] = fit_velocity(t(i_pre), E(i_pre));
+[v_pre_N, ~] = fit_velocity(t(i_pre), N(i_pre));
+[v_pre_U, ~] = fit_velocity(t(i_pre), U(i_pre));
+
+% post velo (mm/yr)
+[v_post_E, ~] = fit_velocity(t(i_post), E(i_post));
+[v_post_N, ~] = fit_velocity(t(i_post), N(i_post));
+[v_post_U, ~] = fit_velocity(t(i_post), U(i_post));
+
+%  cosiesmic (mm)
+d_co_E = (E(idx_first_post) - E(idx_last_pre));
+d_co_N = (N(idx_first_post) - N(idx_last_pre));
+d_co_U = (U(idx_first_post) - U(idx_last_pre));
+
+% Plot on the map
+figure(3); clf;
+set(gcf, 'Color', 'w', 'Position', [100 100 800 600]);
+axes; hold on;
+set(gca, 'Color', [0.95 0.95 0.95], 'Box', 'on');
+
+% plot coastlines
+    coast = load('coastfile.xy');
+    plot(coast(:,1), coast(:,2), 'k', 'LineWidth', 1.0);
+    borders = load('politicalboundaryfile.xy');
+    plot(borders(:,1), borders(:,2), 'k', 'LineWidth', 0.5);
+
+% Plot Station
+plot(xloc, yloc, 'ko', 'MarkerFaceColor', 'w', 'MarkerSize', 8);
+text(xloc + 0.1, yloc, station, 'FontWeight', 'bold');
+
+% Plot vectors
+scale = 0.5; 
+
+% Pre-Seismic (Blue)
+quiver(xloc, yloc, v_pre_E, v_pre_N, scale * 0.1, 'b', 'LineWidth', 2, 'MaxHeadSize',0.5, 'DisplayName', 'Pre-Seismic Vel');
+% Post-Seismic (Green)
+quiver(xloc, yloc, v_post_E, v_post_N, scale * 0.1, 'g', 'LineWidth', 2, 'MaxHeadSize',0.5, 'DisplayName', 'Post-Seismic Vel');
+% Co-Seismic (Red)
+quiver(xloc, yloc, d_co_E, d_co_N, scale * 0.1, 'r', 'LineWidth', 2, 'MaxHeadSize',0.5, 'DisplayName', 'Co-Seismic Disp');
+
+legend('Location', 'best');
+xlabel('Longitude (deg)'); ylabel('Latitude (deg)');
+title(['Direction Analysis: ', station]);
+grid on; axis equal;
+axis([xloc-3, xloc+3, yloc-3, yloc+3]);
+
+function [vel, model_line] = fit_velocity(t, x)
+    if length(t) < 2
+        vel = 0; model_line = x; return; 
+    end
+    P = polyfit(t, x, 1);
+    vel = P(1); 
+    model_line = polyval(P, t);
+end
+
+% statements for calculations
+fprintf('The pre seismic velocity is %.2f mm/yr East, %.2f mm/yr North, and %.2f mm/yr Up.\n', v_pre_E, v_pre_N, v_pre_U);
+fprintf('The co seismic displacement is %.2f mm East, %.2f mm North, and %.2f mm Up.\n', d_co_E, d_co_N, d_co_U);
+fprintf('The post seismic velocity is %.2f mm/yr East, %.2f mm/yr North, and %.2f mm/yr Up.\n', v_post_E, v_post_N, v_post_U);
