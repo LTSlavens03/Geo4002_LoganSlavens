@@ -1,0 +1,328 @@
+% Codes I need for the project
+
+clear; clc;
+
+% Load in stations and data
+inside_ids = {'STLE', 'PIGT', 'MOKE', 'ARJO', 'MODX', 'LCHS'};
+outside_ids = {'TN24', 'ALBE', 'MSGR', 'ARDQ', 'ARSM', 'OKRM', 'MODO', ...
+               'ILEH', 'INTC', 'KYTC'};
+           
+stationlist = [inside_ids, outside_ids];
+num_sites = length(stationlist);
+num_inside = length(inside_ids);
+num_outside = length(outside_ids);
+
+baseUrl = 'https://geodesy.unr.edu/gps_timeseries/IGS20/tenv3/NA/';
+fmt = '%s %s %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f';
+
+T = cell(1, num_sites);
+E = cell(1, num_sites);
+N = cell(1, num_sites);
+ERESIDUAL = cell(1, num_sites);
+
+raw_ve = zeros(1, num_sites);
+raw_vn = zeros(1, num_sites);
+lon = zeros(1, num_sites);
+lat = zeros(1, num_sites);
+
+% Load data & calculate velo
+
+for k = 1:num_sites
+    site = stationlist{k};
+    filename = [site, '.NA.tenv3'];
+     
+    fid = fopen(filename);
+    if fid == -1
+        continue; 
+    end
+    C = textscan(fid, fmt, 'HeaderLines', 1);
+    fclose(fid);
+    
+    T{k} = C{3};
+    E{k} = C{9}  * 1000; % Convert m to mm
+    N{k} = C{11} * 1000;
+    lat(k) = C{21}(1);
+    lon(k) = C{22}(1);
+    
+    % Calculate Slope (Velocity)
+    if ~isempty(T{k})
+        pe = polyfit(T{k}, E{k}, 1);
+        pn = polyfit(T{k}, N{k}, 1);
+        raw_ve(k) = pe(1);
+        raw_vn(k) = pn(1);
+    end
+end
+
+% "Euler Pole" Math
+% when reading on how to calculate fault/plate movement, the recommended
+% Approach is to use a euler pole or far away axis to base your plates 
+% motion on.
+mean_ve_outside = mean(raw_ve(num_inside+1:end));
+mean_vn_outside = mean(raw_vn(num_inside+1:end));
+
+rel_ve = raw_ve - mean_ve_outside;
+rel_vn = raw_vn - mean_vn_outside;
+
+% Calculate Residuals
+for k = 1:num_sites
+    if ~isempty(T{k})
+        pe_rel = polyfit(T{k}, E{k}, 1);
+        fit_e = polyval(pe_rel, T{k});
+        ERESIDUAL{k} = E{k} - fit_e;
+    end
+end
+
+% Find average for Fig 4
+% I had to interpolate data in a common timescale to average them, 
+% beacuse the stations have different start/end dates and gaps.
+
+% Use of AI/Copiolt for lines 85-97 to help make my figures be cleaner and
+% easier to read, basically this code puts all the data from all the
+% stations on the same time scale, without this there was many jumps and
+% breaks within my graph.
+
+%global min and max time
+all_T = vertcat(T{:});
+min_t = min(all_T);
+max_t = max(all_T);
+
+t_common = min_t : (10/365.25) : max_t; 
+
+% Pre-allocate matrices (Rows = time, Cols = stations)
+inside_E_interp   = nan(length(t_common), num_inside);
+outside_E_interp  = nan(length(t_common), num_outside);
+inside_Res_interp = nan(length(t_common), num_inside);
+outside_Res_interp= nan(length(t_common), num_outside);
+
+% inside stations
+for i = 1:num_inside
+    k = i; 
+    if ~isempty(T{k})
+        E_normalized = E{k} - E{k}(1); 
+        inside_E_interp(:, i) = interp1(T{k}, E_normalized, t_common, 'linear', NaN);
+        inside_Res_interp(:, i) = interp1(T{k}, ERESIDUAL{k}, t_common, 'linear', NaN);
+    end
+end
+
+% Outside stations
+for i = 1:num_outside
+    k = num_inside + i; 
+    if ~isempty(T{k})
+        E_normalized = E{k} - E{k}(1);
+        outside_E_interp(:, i) = interp1(T{k}, E_normalized, t_common, 'linear', NaN);
+        outside_Res_interp(:, i) = interp1(T{k}, ERESIDUAL{k}, t_common, 'linear', NaN);
+    end
+end
+
+% Calculate Means (Copilot suggested I add the "Omitnan" to the line)
+avg_E_inside  = mean(inside_E_interp, 2, 'omitnan');
+avg_E_outside = mean(outside_E_interp, 2, 'omitnan');
+avg_Res_inside = mean(inside_Res_interp, 2, 'omitnan');
+avg_Res_outside= mean(outside_Res_interp, 2, 'omitnan');
+
+% Fig 1 : velocities
+figure(1); clf;
+set(gcf, 'Color', 'k'); 
+subplot(2,1,1); hold on;
+set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+for k = 7:16
+    if ~isempty(T{k})
+        plot(T{k}, E{k} - E{k}(1), 'LineWidth', 1.5);
+    end
+end
+title('Stable Reference Group Tectonic Trend (East-West)', 'Color', 'w');
+ylabel('East (mm)', 'Color', 'w'); grid on;
+legend(stationlist(7:16), 'TextColor', 'w', 'Color', 'k', 'Location', 'eastoutside');
+
+subplot(2,1,2); hold on;
+set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+for k = 1:6
+    if ~isempty(T{k})
+        plot(T{k}, E{k} - E{k}(1), 'LineWidth', 1.5);
+    end
+end
+title('New Madrid Fault Tectonic Trend (East-West)', 'Color', 'w');
+ylabel('East (mm)', 'Color', 'w'); xlabel('Year', 'Color', 'w'); grid on;
+legend(stationlist(1:6), 'TextColor', 'w', 'Color', 'k', 'Location', 'eastoutside');
+
+% Fig 2: residuals
+
+figure(2); clf;
+set(gcf, 'Color', 'k');
+subplot(2,1,1); hold on;
+set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+for k = 7:16
+    if ~isempty(T{k})
+        plot(T{k}, ERESIDUAL{k}, 'LineWidth', 1);
+    end
+end
+title('Stable Reference Group Residuals', 'Color', 'w');
+ylabel('Res (mm)', 'Color', 'w'); grid on;
+
+subplot(2,1,2); hold on;
+set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+for k = 1:6
+    if ~isempty(T{k})
+        plot(T{k}, ERESIDUAL{k}, 'LineWidth', 1);
+    end
+end
+title('New Madrid Fault Residuals', 'Color', 'w');
+ylabel('Res (mm)', 'Color', 'w'); xlabel('Year', 'Color', 'w'); grid on;
+
+% Fig 3 : Map with Vectors
+
+figure(3); clf;
+set(gcf, 'Color', 'k', 'Position', [100 100 800 800]);
+axes; hold on;
+set(gca, 'Color', [0.1 0.1 0.1], 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w', 'Box', 'on');
+
+% Load coast and politial boundaries
+
+    coast = load('coastfile.xy');
+    plot(coast(:,1), coast(:,2), 'w', 'LineWidth', 1.2);
+
+    borders = load('politicalboundaryfile.xy');
+    plot(borders(:,1), borders(:,2), 'w', 'LineWidth', 0.8);
+
+% Plot Relative Vectors (Arrows)
+
+% Outside 
+quiver(lon(7:16), lat(7:16), rel_ve(7:16), rel_vn(7:16), 0.5, 'c', 'LineWidth', 2); 
+% Inside 
+quiver(lon(1:6), lat(1:6), rel_ve(1:6), rel_vn(1:6), 0.5, 'y', 'LineWidth', 2);   
+
+% Plot Station Markers
+plot(lon(7:16), lat(7:16), 'co', 'MarkerFaceColor', 'c');
+plot(lon(1:6), lat(1:6), 'yo', 'MarkerFaceColor', 'y');
+
+% Station Labels
+text(lon + 0.05, lat, stationlist, 'FontSize', 8, 'FontWeight', 'bold', 'Color', 'w');
+
+% Map Bounds 
+axis([-93 -86 34 40]);
+avg_lat_map = mean(lat);
+daspect([1 cosd(avg_lat_map) 1]);
+xlabel('Longitude', 'Color', 'w'); ylabel('Latitude', 'Color', 'w');
+title('NMSZ Residual Velocities', 'Color', 'w');
+grid on;
+
+% Fig 4: Average velo 
+% may or may not use in final presentation. This is only to created to see
+% if it showed any additional data
+
+figure(4); clf;
+set(gcf, 'Color', 'k');
+
+% Subplot 1 : Average Velo
+subplot(2,1,1); hold on;
+set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+
+% Plot Average Outside - blue
+h1 = plot(t_common, avg_E_outside, 'c', 'LineWidth', 2);
+% Plot Average Inside - yellow
+h2 = plot(t_common, avg_E_inside, 'y', 'LineWidth', 2);
+
+title('Comparison of Average Zonal Velocities', 'Color', 'w');
+ylabel('Avg East Displacement (mm)', 'Color', 'w'); 
+grid on;
+legend([h1, h2], {'Outside Zones Avg', 'Inside Zones Avg'}, ...
+    'TextColor', 'w', 'Color', 'k', 'Location', 'best');
+
+% Subplot 2 : Average Residuals
+subplot(2,1,2); hold on;
+set(gca, 'Color', 'k', 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+
+% Plot Average outside Resid
+h3 = plot(t_common, avg_Res_outside, 'c', 'LineWidth', 1.5);
+% Plot Average inside Resid
+h4 = plot(t_common, avg_Res_inside, 'y', 'LineWidth', 1.5);
+
+title('Average Zonal Residuals', 'Color', 'w');
+ylabel('Avg Residual (mm)', 'Color', 'w'); 
+xlabel('Year', 'Color', 'w'); 
+grid on;
+legend([h3, h4], {'Outside Residuals Avg', 'Inside Residuals Avg'}, ...
+    'TextColor', 'w', 'Color', 'k', 'Location', 'best');
+
+% 9. Fig 5: Plain Map with oval for area of NMSZ
+figure(5); clf;
+set(gcf, 'Color', 'k', 'Position', [100 100 800 800]);
+axes; hold on;
+set(gca, 'Color', [0.1 0.1 0.1], 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w', 'Box', 'on');
+
+% load boundary the Same as fig 3
+    coast = load('coastfile.xy');
+    plot(coast(:,1), coast(:,2), 'w', 'LineWidth', 1.2);
+
+    borders = load('politicalboundaryfile.xy');
+    plot(borders(:,1), borders(:,2), 'w', 'LineWidth', 0.8);
+
+% Add red oval to show the NMFZ area (Use of AI to help form this on my map)
+% without AI my "oval" was square.
+oval_north = -91.0;
+oval_south = 35.5;
+oval_width = -89.0 - (-91.0);
+oval_height = 37.5 - 35.5;   
+
+rectangle('Position', [oval_north, oval_south, oval_width, oval_height], ...
+'Curvature', [1 1], 'EdgeColor', 'r', 'LineWidth', 3, 'LineStyle', '--');
+
+% Plot Outside Stations
+plot(lon(7:16), lat(7:16), 'co', 'MarkerFaceColor', 'c', 'MarkerSize', 9);
+% Plot Inside Stations 
+plot(lon(1:6), lat(1:6), 'yo', 'MarkerFaceColor', 'y', 'MarkerSize', 9);
+
+% Station Labels
+text(lon + 0.05, lat, stationlist, 'FontSize', 8, 'FontWeight', 'bold', 'Color', 'w');
+
+% Map Bounds & Formatting (Same as Fig 3)
+axis([-93 -86 34 40]);
+avg_lat_map = mean(lat);
+daspect([1 cosd(avg_lat_map) 1]);
+xlabel('Longitude', 'Color', 'w'); ylabel('Latitude', 'Color', 'w');
+title('The New Madrid Fault Zone (NMFZ) Study Area', 'Color', 'w');
+grid on;
+
+%  Fig 6: Strain Axis
+%I tried using our starter code to plot this on a map but it never
+% looked good or accurate, even with the help of AI, but AI did suggest
+% for me to try a chart of velocity vs longitude with a chart on the left
+%To shoe if it is streching/locked/squeezing. With error bars.
+
+figure(6); clf;
+set(gcf, 'Color', 'k', 'Position', [200 200 900 550]);
+
+% --- Left Side: Velocity ---
+yyaxis left
+hold on;
+set(gca, 'YColor', 'c', 'XColor', 'w', 'GridColor', [0.3 0.3 0.3]);
+
+% Plot Outside (Cyan) and Inside (Yellow)
+errorbar(lon(7:16), rel_ve(7:16), ones(1,10)*std(rel_ve(7:16)), 'co', ...
+    'MarkerFaceColor', 'c', 'DisplayName', 'Outside Stations');
+errorbar(lon(1:6), rel_ve(1:6), ones(1,6)*std(rel_ve(1:6)), 'yo', ...
+    'MarkerFaceColor', 'y', 'MarkerSize', 8, 'DisplayName', 'Inside NMFZ');
+
+ylabel('Relative Velocity (mm/yr)', 'FontSize', 12);
+ylim([-10 10]); % Keep it centered so 0 is easy to see
+
+% Strain Axis
+yyaxis right
+set(gca, 'YColor', 'r');
+ylabel('Potential Strain (Stretching)', 'FontSize', 12, 'FontWeight', 'bold');
+
+ylim([-10 10]); 
+yticks([-8, 0, 8]);
+yticklabels({'Squeezing', 'Locked / Stable', 'Stretching'});
+
+% Formatting
+xlabel('Longitude (Degrees East)', 'Color', 'w');
+title('Velocity Profile & Strain Analysis', 'Color', 'w', 'FontSize', 14);
+grid on;
+legend('TextColor', 'w', 'Color', 'k', 'Location', 'northeast');
+
+% trend line to show the average Slope
+p_all = polyfit(lon, rel_ve, 1);
+plot(lon, polyval(p_all, lon), 'w--', 'LineWidth', 1, 'DisplayName', 'Total Plate Trend');
+
+shg
